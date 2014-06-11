@@ -1,0 +1,15 @@
+{
+  "name": "dockermake",
+  "description": "Build utility for complex Docker dependency trees based on Makefile",
+  "repository": "git@github.com:solatis/dockermake.git",
+  "main": "src/",
+  "version": "0.0.1",
+
+  "dependencies": {
+      "nomnom": "latest"
+  },
+
+  "bin": {
+      "dockermake": "bin/dockermake"
+  }
+}

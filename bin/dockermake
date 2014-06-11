@@ -1,0 +1,79 @@
+#!/usr/bin/env node
+
+var Filesystem = require('fs');
+var Path       = require('path');
+
+var opts = require("nomnom")
+   .option('input', {
+      abbr: 'i',
+      default: 'dockermake.json',
+      help: 'JSON file that describes Docker dependency tree'
+   })
+   .option('output', {
+      abbr: 'o',
+      default: 'Makefile',
+      help: 'Output destination for generated Makefile'
+   })
+   .option('namespace', {
+      abbr: 'n',
+      help: 'Namespace to use for built Docker images'
+   })
+   .parse();
+
+var input  = require(Path.join(process.cwd(), opts.input));
+var output = new String();
+
+var groups = {};
+
+for (var id in input) {
+    var options    = input[id];
+
+    if (options.group) {
+        if (!groups[options.group]) {
+            groups[options.group] = [];
+        }
+
+        groups[options.group].push(id);
+    }
+
+    // Since Make expects a target to produce an output file in order to
+    // decide which rules to build, we will 'fake' producing an output file
+    // called tmpFile here.
+    var dockerFile = Path.join(options.dir, '/Dockerfile');
+    var tmpFile    = Path.join(options.dir, '/.dockerbuild');
+
+    // Note that the order in which we build the [dependencies] array is
+    // important: Make builds the images in this order. By including the
+    // parent in the front, we ensure that our parent is always built
+    // before our current rule.x
+    var dependencies = [];
+    if (options.parent) {
+        dependencies.push(options.parent);
+    }
+    dependencies.push(tmpFile);
+
+    output += id + ': ' + dependencies.join(' ') + '\n';
+
+    // And now as our actual build rule, we define how the temp file is
+    // created: by building a Docker image!
+    //
+    // Since we list our Dockerfile as a dependency, Make knows that if
+    // the Dockerfile changes, the tmpFile (= our Docker image) must be
+    // rebuilt.
+    output += tmpFile + ': ' + dockerFile + '\n';
+    output += '\tsudo docker build -t tomatoes/' + id + ' ' + options.dir + ' && touch ' + tmpFile + '\n';
+
+    output += '\n';
+}
+
+for (var id in groups) {
+    var members = groups[id];
+
+    output += id + ": " + members.join(' ') + '\n';
+}
+
+if (opts.output == '-') {
+    console.log(output);
+} else {
+    Filesystem.writeFileSync(opts.output, output);
+}
