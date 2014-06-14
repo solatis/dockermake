@@ -20,10 +20,11 @@ var opts = require("nomnom")
    })
    .parse();
 
-var input  = require(Path.join(process.cwd(), opts.input));
-var output = new String();
+var input     = require(Path.join(process.cwd(), opts.input));
+var output    = new String();
 
-var groups = {};
+var groups    = {};
+var testables = [];
 
 for (var id in input) {
     var options    = input[id];
@@ -36,11 +37,14 @@ for (var id in input) {
         groups[options.group].push(id);
     }
 
+    if (options.test === true) {
+        testables.push(id);
+    }
+
     // Since Make expects a target to produce an output file in order to
     // decide which rules to build, we will 'fake' producing an output file
     // called tmpFile here.
     var dockerFile = Path.join(options.dir, '/Dockerfile');
-    var tmpFile    = Path.join(options.dir, '/.dockerbuild');
 
     // Note that the order in which we build the [dependencies] array is
     // important: Make builds the images in this order. By including the
@@ -50,18 +54,10 @@ for (var id in input) {
     if (options.parent) {
         dependencies.push(options.parent);
     }
-    dependencies.push(tmpFile);
+    dependencies.push(dockerFile)
 
     output += id + ': ' + dependencies.join(' ') + '\n';
-
-    // And now as our actual build rule, we define how the temp file is
-    // created: by building a Docker image!
-    //
-    // Since we list our Dockerfile as a dependency, Make knows that if
-    // the Dockerfile changes, the tmpFile (= our Docker image) must be
-    // rebuilt.
-    output += tmpFile + ': ' + dockerFile + '\n';
-    output += '\tsudo docker build -t tomatoes/' + id + ' ' + options.dir + ' && touch ' + tmpFile + '\n';
+    output += '\tsudo docker build -t tomatoes/' + id + ' ' + options.dir + '\n';
 
     output += '\n';
 }
@@ -70,6 +66,25 @@ for (var id in groups) {
     var members = groups[id];
 
     output += id + ": " + members.join(' ') + '\n';
+}
+
+output += '\n';
+
+if (testables.length > 0) {
+    output += 'test: ' + testables.join(' ') + '\n';
+
+    for (var i = 0; i < testables.length; ++i) {
+        var id          = testables[i];
+        var options     = input[id];
+        options['link'] = options['link'] || [];
+
+        output += '\tsudo docker run ';
+        for (var j = 0; j < options['link'].length; ++j) {
+            var linkId = options['link'][j];
+            output += '--link ' + linkId + ':' + linkId + ' ';
+        }
+        output += 'tomatoes/' + id + ' test\n'
+    }
 }
 
 if (opts.output == '-') {
